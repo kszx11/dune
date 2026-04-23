@@ -47,6 +47,7 @@ python -m dune_game
 ## Commands
 
 - `look`
+- `hint`
 - `inspect <thing>`
 - `listen`
 - `people`
@@ -58,6 +59,7 @@ python -m dune_game
 - `map`
 - `rumors`
 - `journal`
+- `menu`
 - `save`
 - `load`
 - `help`

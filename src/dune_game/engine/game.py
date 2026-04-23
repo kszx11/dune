@@ -112,8 +112,15 @@ class GameApp:
             save_state(self.config.autosave_file, self.state)
             self.renderer.system("The sands remember your passage.")
             return "quit"
+        if command.kind == "menu":
+            save_state(self.config.autosave_file, self.state)
+            self.renderer.system("You return to the main menu. Your present road remains in autosave.")
+            return "menu"
         if command.kind == "help":
             self._show_help()
+            return "continue"
+        if command.kind == "hint":
+            self._show_hint()
             return "continue"
         if command.kind == "look":
             self._render_scene()
@@ -218,13 +225,14 @@ class GameApp:
         shops = self.present_shops(location)
         missions = [mission for mission in self.missions() if mission.status == "active"]
         exit_names = [self.all_locations()[loc_id].name for loc_id in location.linked_locations if loc_id in self.all_locations()]
+        self._refresh_suggestions()
         if opening or not self.state.last_narration:
             description = self.ai.describe_location(location, npcs, shops, rumors, missions)
             self.state.last_narration = description
         else:
             description = self.state.last_narration
         self.renderer.location_card(self.state, location, npcs, exit_names, rumors, missions)
-        self.renderer.show_status(self.state, location, len(npcs), self._trust_hint())
+        self.renderer.show_status(self.state, location, len(npcs), self._trust_hint(), self.state.suggestions)
         self.renderer.narrate(description)
         save_state(self.config.autosave_file, self.state)
 
@@ -251,6 +259,7 @@ class GameApp:
             "Commands",
             [
                 "look",
+                "hint",
                 "inspect <thing>",
                 "listen",
                 "people",
@@ -262,11 +271,18 @@ class GameApp:
                 "map",
                 "rumors",
                 "journal",
+                "menu",
                 "save",
                 "load",
                 "quit",
             ],
         )
+
+    def _show_hint(self) -> None:
+        assert self.state is not None
+        self._refresh_suggestions()
+        lines = self.state.suggestions[:] or ["Nothing presses strongly at the moment. Look, listen, or speak with someone nearby."]
+        self.renderer.show_options("Quiet Guidance", lines)
 
     def _show_people(self) -> None:
         location = self.current_location()
@@ -657,6 +673,65 @@ class GameApp:
             created = True
         if created:
             self._commit_npc_states(npc_states)
+
+    def _refresh_suggestions(self) -> None:
+        assert self.state is not None
+        self.state.suggestions = self._build_suggestions()[:3]
+
+    def _build_suggestions(self) -> list[str]:
+        assert self.state is not None
+        location = self.current_location()
+        suggestions: list[str] = []
+        all_locations = self.all_locations()
+        rumors = self.rumors()
+        missions = [mission for mission in self.missions() if mission.status == "active"]
+        present_npcs = self.present_npcs(location.id)
+
+        local_hidden_rumors = [rumor for rumor in rumors if rumor.location_id == location.id and not rumor.discovered]
+        if local_hidden_rumors:
+            suggestions.append("A quiet thread: listen here before the local rumor goes cold.")
+
+        local_mission = next((mission for mission in missions if mission.location_id == location.id), None)
+        if local_mission is not None:
+            suggestions.append(f"A pressure point: {local_mission.title} can be advanced here.")
+
+        talkable = next(
+            (
+                npc for npc in present_npcs
+                if npc.troubles or npc.rumor_ids or not npc.memory
+            ),
+            None,
+        )
+        if talkable is not None:
+            focus = talkable.troubles[0] if talkable.troubles else "what weighs on this place"
+            suggestions.append(f"A living thread: talk to {talkable.name} about {focus.lower()}.")
+
+        unexplored_exit = next(
+            (all_locations[loc_id] for loc_id in location.linked_locations if loc_id in all_locations and loc_id not in self.state.discovered_locations),
+            None,
+        )
+        if unexplored_exit is not None:
+            suggestions.append(f"An open route: go {unexplored_exit.name} to widen the map.")
+
+        remote_mission = next((mission for mission in missions if mission.location_id != location.id), None)
+        if remote_mission is not None:
+            target_location = all_locations.get(remote_mission.location_id)
+            if target_location is not None:
+                suggestions.append(f"A live route: {target_location.name} holds {remote_mission.title}.")
+
+        if location.can_expand:
+            suggestions.append("A frontier pressure: travel toward a named place if you want Arrakis to open farther.")
+
+        if not suggestions and location.landmarks:
+            suggestions.append(f"A close detail: inspect {location.landmarks[0]} before moving on.")
+
+        seen: set[str] = set()
+        unique: list[str] = []
+        for line in suggestions:
+            if line not in seen:
+                unique.append(line)
+                seen.add(line)
+        return unique
 
 
 def _slug(text: str) -> str:

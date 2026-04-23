@@ -163,6 +163,7 @@ class GameState:
     missions: list[dict[str, Any]] = field(default_factory=list)
     dynamic_locations: dict[str, dict[str, Any]] = field(default_factory=dict)
     dynamic_shops: dict[str, dict[str, Any]] = field(default_factory=dict)
+    suggestions: list[str] = field(default_factory=list)
     last_narration: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -182,5 +183,6 @@ class GameState:
         data.setdefault("missions", [])
         data.setdefault("dynamic_locations", {})
         data.setdefault("dynamic_shops", {})
+        data.setdefault("suggestions", [])
         data.setdefault("last_narration", "")
         return cls(**data)
