@@ -1,8 +1,12 @@
 # Dune Sandbox
 
-Terminal-first exploration game set on Arrakis from Paul's perspective.
+Dune Sandbox is a terminal-first exploration game set on Arrakis from Paul's perspective.
 
-The game now centers on a handcrafted Arrakis sandbox with:
+Move through markets, palace courts, hidden routes, worker districts, and the open desert while dealing with rumor, suspicion, survival, and the pressure of being Paul Atreides. The game aims for a tone closer to the novel than to a conventional RPG: more political, more watchful, and more concerned with water, power, secrecy, and consequence.
+
+If you want a Dune game that feels exploratory rather than railroaded, this is the pitch: walk the world, listen carefully, talk to people who have their own burdens, and let Arrakis open outward into stranger and larger regions over time.
+
+Current highlights:
 
 - authored districts, compounds, desert routes, and hidden regions
 - canon and recurring non-canon NPCs with memory and personal troubles
