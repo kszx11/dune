@@ -261,10 +261,22 @@ class GameApp:
             self.state.last_narration = description
         else:
             description = self.state.last_narration
-        self.renderer.location_card(self.state, location, area, npcs, exit_names, rumors, missions)
-        self.renderer.show_status(self.state, self._trust_hint(), self.state.suggestions)
+        self._render_scene_panels(location, area, npcs, exit_names, rumors, missions)
         self.renderer.narrate(description)
         save_state(self.config.autosave_file, self.state)
+
+    def _render_scene_panels(
+        self,
+        location: LocationProfile,
+        area: AreaProfile | None,
+        npcs: list[NpcState],
+        exit_names: list[str],
+        rumors: list[Rumor],
+        missions: list[Mission],
+    ) -> None:
+        assert self.state is not None
+        self.renderer.location_card(self.state, location, area, npcs, exit_names, rumors, missions)
+        self.renderer.show_status(self.state, self._trust_hint(), self.state.suggestions)
 
     def _trust_hint(self) -> str:
         assert self.state is not None
@@ -624,8 +636,16 @@ class GameApp:
         while True:
             line = Prompt.ask("Paul").strip()
             if line.lower() in {"bye", "leave", "goodbye", "back"}:
-                self.renderer.system("You return your attention to the larger scene.")
                 self._commit_npc_states(npc_states)
+                location = self.current_location()
+                area = self.current_area()
+                npcs = self.present_npcs(location.id, area.id if area is not None else "")
+                rumors = [rumor for rumor in self.rumors() if rumor.location_id == location.id and rumor.discovered]
+                missions = [mission for mission in self.missions() if mission.status == "active"]
+                exit_names = self._scene_exit_names(location, area)
+                self._refresh_suggestions()
+                self.renderer.system("You return your attention to the larger scene.")
+                self._render_scene_panels(location, area, npcs, exit_names, rumors, missions)
                 save_state(self.config.autosave_file, self.state)
                 return
             reply = self.ai.npc_reply(npc, self.current_location(), line)
@@ -661,6 +681,7 @@ class GameApp:
             self.state.facts.append(f"{npc.name} spoke of {topic}.")
         self._commit_npc_states(npc_states)
         self._advance_time()
+        self._refresh_suggestions()
         self.renderer.npc(npc.name, reply)
 
     def _freeform(self, raw: str) -> None:
@@ -906,7 +927,7 @@ class GameApp:
         talkable = next(
             (
                 npc for npc in present_npcs
-                if npc.troubles or npc.rumor_ids or not npc.memory
+                if not npc.memory
             ),
             None,
         )

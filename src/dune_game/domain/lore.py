@@ -101,15 +101,23 @@ class LoreCatalog:
         location_id: str | None = None,
         area_id: str | None = None,
     ) -> NpcState | None:
-        needle = query.strip().lower()
+        needle = _normalize_lookup_text(query)
+        if not needle:
+            return None
+
+        needle_tokens = set(needle.split())
+        best_match: tuple[int, NpcState] | None = None
         for npc in npc_states.values():
             if location_id and npc.current_location != location_id:
                 continue
             if area_id is not None and npc.current_area != area_id:
                 continue
-            if needle == npc.name.lower() or needle in npc.name.lower():
-                return npc
-        return None
+            score = _score_npc_match(needle, needle_tokens, npc)
+            if score <= 0:
+                continue
+            if best_match is None or score > best_match[0]:
+                best_match = (score, npc)
+        return best_match[1] if best_match is not None else None
 
 
 def _read_structured(path: Path) -> dict:
@@ -117,3 +125,38 @@ def _read_structured(path: Path) -> dict:
     if yaml is not None:
         return yaml.safe_load(text)
     return json.loads(text)
+
+
+def _normalize_lookup_text(text: str) -> str:
+    cleaned = "".join(char.lower() if char.isalnum() or char.isspace() else " " for char in text)
+    return " ".join(cleaned.split())
+
+
+def _score_npc_match(needle: str, needle_tokens: set[str], npc: NpcState) -> int:
+    name = _normalize_lookup_text(npc.name)
+    title = _normalize_lookup_text(npc.title)
+    summary = _normalize_lookup_text(npc.summary)
+    haystacks = [name, title, summary]
+    candidate_tokens = set(" ".join(haystacks).split())
+
+    if needle == name:
+        return 100
+    if needle == title:
+        return 90
+    if needle in {token for token in name.split()}:
+        return 85
+    if needle in {token for token in title.split()}:
+        return 80
+    if needle and needle in name:
+        return 75
+    if needle and needle in title:
+        return 72
+    if needle_tokens and needle_tokens.issubset(set(name.split())):
+        return 70 + len(needle_tokens)
+    if needle_tokens and needle_tokens.issubset(set(title.split())):
+        return 66 + len(needle_tokens)
+    if needle_tokens and needle_tokens.issubset(candidate_tokens):
+        return 60 + len(needle_tokens)
+    if needle in summary:
+        return 40
+    return 0

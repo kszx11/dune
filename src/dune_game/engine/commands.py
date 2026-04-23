@@ -53,7 +53,7 @@ def parse_command(raw: str) -> ParsedCommand:
     for prefix in ("inspect ", "examine ", "look at "):
         if lowered.startswith(prefix):
             return ParsedCommand(kind="inspect", raw=raw, target=text[len(prefix) :].strip())
-    for prefix in ("talk to ", "talk ", "speak with ", "speak to "):
+    for prefix in ("talk to ", "talk with ", "talk ", "speak with ", "speak to "):
         if lowered.startswith(prefix):
             return ParsedCommand(kind="talk", raw=raw, target=text[len(prefix) :].strip())
     if lowered.startswith("ask "):

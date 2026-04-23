@@ -56,10 +56,11 @@ class Renderer:
         self._stream(textwrap.fill(text, width=92), theme.NARRATION)
 
     def npc(self, npc_name: str, text: str) -> None:
+        cleaned = self._clean_npc_text(npc_name, text)
         if not RICH_AVAILABLE:
-            print(f"{npc_name}: {textwrap.fill(text, width=88)}")
+            print(f"{npc_name}: {textwrap.fill(cleaned, width=88)}")
             return
-        self.console.print(f"[{theme.NPC}]{npc_name}[/{theme.NPC}]: {textwrap.fill(text, width=88)}")
+        self.console.print(f"[{theme.NPC}]{npc_name}[/{theme.NPC}]: {textwrap.fill(cleaned, width=88)}")
 
     def system(self, text: str) -> None:
         if not RICH_AVAILABLE:
@@ -162,3 +163,20 @@ class Renderer:
         for paragraph in text.split("\n"):
             self.console.print(f"[{style}]{paragraph}[/{style}]")
             time.sleep(self.config.typewriter_delay)
+
+    def _clean_npc_text(self, npc_name: str, text: str) -> str:
+        cleaned = text.strip()
+        lowered = cleaned.lower()
+        name = npc_name.lower()
+        prefixes = [
+            f"{name}:",
+            f"{name} says:",
+            f"{name} says",
+            f"{name},",
+            f"{name} ",
+        ]
+        for prefix in prefixes:
+            if lowered.startswith(prefix):
+                cleaned = cleaned[len(prefix):].lstrip(" ,:-")
+                break
+        return cleaned

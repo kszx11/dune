@@ -99,7 +99,7 @@ class WorldAI:
                 "answers carefully, as one who has survived by speaking only as much as necessary",
             ]
         )
-        return f"{npc.name} {tone}. \"{self._fallback_speech(npc, player_line)}\""
+        return f"{tone}. \"{self._fallback_speech(npc, player_line)}\""
 
     def narrate_action(self, location: LocationProfile, action_text: str) -> str:
         instructions = (

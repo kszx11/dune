@@ -38,3 +38,9 @@ def test_parse_enter_command() -> None:
 def test_parse_leave_command() -> None:
     parsed = parse_command("leave")
     assert parsed.kind == "leave"
+
+
+def test_parse_talk_with_command() -> None:
+    parsed = parse_command("talk with Jessica")
+    assert parsed.kind == "talk"
+    assert parsed.target == "Jessica"
