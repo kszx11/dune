@@ -96,7 +96,7 @@ class Renderer:
             print(f"Region: {location.region}")
             print(f"Hour: {TIME_MARKERS[state.time_index % len(TIME_MARKERS)]}")
             print(f"People: {', '.join(npc.name for npc in npcs[:4]) or 'No one close enough to matter'}")
-            print(f"Exits: {', '.join(exit_names[:5]) or 'No clear route'}")
+            print(f"Nearby: {', '.join(exit_names[:5]) or 'No clear route'}")
             return
         table = Table(show_header=False, box=None, pad_edge=False)
         table.add_row("Location", location.name)
@@ -105,7 +105,7 @@ class Renderer:
         table.add_row("Region", location.region)
         table.add_row("Hour", TIME_MARKERS[state.time_index % len(TIME_MARKERS)])
         table.add_row("People", ", ".join(npc.name for npc in npcs[:4]) or "No one close enough to matter")
-        table.add_row("Exits", ", ".join(exit_names[:5]) or "No clear route")
+        table.add_row("Nearby", ", ".join(exit_names[:5]) or "No clear route")
         if rumors:
             table.add_row("Rumors", f"{len([r for r in rumors if r.discovered and not r.resolved])} pressing")
         if missions:
