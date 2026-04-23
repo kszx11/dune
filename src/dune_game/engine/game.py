@@ -41,7 +41,7 @@ class GameApp:
         self.state: GameState | None = None
 
     def run(self) -> None:
-        self.renderer.title("Dune Sandbox")
+        self.renderer.title("Dune: Arrakis")
         self.renderer.meta("Exploration-first Arrakis from Paul's viewpoint.")
         self.renderer.intro()
         if not self.ai.enabled:
