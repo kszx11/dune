@@ -1,0 +1,155 @@
+from __future__ import annotations
+
+import textwrap
+import time
+
+try:
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+    RICH_AVAILABLE = True
+except ModuleNotFoundError:
+    Console = None
+    Panel = None
+    Table = None
+    RICH_AVAILABLE = False
+
+from dune_game.config import Config
+from dune_game.domain.models import GameState, LocationProfile, Mission, NpcState, Rumor
+from dune_game.ui import theme
+
+
+TIME_MARKERS = [
+    "night's last coolness",
+    "early morning over stone and dust",
+    "the rising heat",
+    "the white hammer of noon",
+    "late afternoon glare",
+    "sand-shadow evening",
+    "deep desert night",
+]
+
+
+class Renderer:
+    def __init__(self, config: Config) -> None:
+        self.config = config
+        self.console = Console() if RICH_AVAILABLE else None
+
+    def title(self, text: str) -> None:
+        if not RICH_AVAILABLE:
+            print(f"\n=== Arrakis :: {text} ===\n")
+            return
+        self.console.print(Panel.fit(text, border_style=theme.TITLE, title="Arrakis"))
+
+    def intro(self) -> None:
+        body = (
+            "You move through Arrakis as Paul Atreides: watched, measured, and burdened by forces "
+            "political, prophetic, and ecological. The world is not arranged for your comfort. "
+            "Water, loyalty, silence, and timing all carry weight here."
+        )
+        if not RICH_AVAILABLE:
+            print(body + "\n")
+            return
+        self.console.print(Panel(body, title="Before The Sand", border_style=theme.TITLE))
+
+    def narrate(self, text: str) -> None:
+        self._stream(textwrap.fill(text, width=92), theme.NARRATION)
+
+    def npc(self, npc_name: str, text: str) -> None:
+        if not RICH_AVAILABLE:
+            print(f"{npc_name}: {textwrap.fill(text, width=88)}")
+            return
+        self.console.print(f"[{theme.NPC}]{npc_name}[/{theme.NPC}]: {textwrap.fill(text, width=88)}")
+
+    def system(self, text: str) -> None:
+        if not RICH_AVAILABLE:
+            print(text)
+            return
+        self.console.print(f"[{theme.SYSTEM}]{text}[/{theme.SYSTEM}]")
+
+    def error(self, text: str) -> None:
+        if not RICH_AVAILABLE:
+            print(f"ERROR: {text}")
+            return
+        self.console.print(f"[{theme.ERROR}]{text}[/{theme.ERROR}]")
+
+    def meta(self, text: str) -> None:
+        if not RICH_AVAILABLE:
+            print(text)
+            return
+        self.console.print(f"[{theme.META}]{text}[/{theme.META}]")
+
+    def location_card(
+        self,
+        state: GameState,
+        location: LocationProfile,
+        npcs: list[NpcState],
+        exit_names: list[str],
+        rumors: list[Rumor],
+        missions: list[Mission],
+    ) -> None:
+        if not RICH_AVAILABLE:
+            print(f"\n[{location.name}]")
+            print(f"Region: {location.region}")
+            print(f"Hour: {TIME_MARKERS[state.time_index % len(TIME_MARKERS)]}")
+            print(f"People: {', '.join(npc.name for npc in npcs[:4]) or 'No one close enough to matter'}")
+            print(f"Exits: {', '.join(exit_names[:5]) or 'No clear route'}")
+            return
+        table = Table(show_header=False, box=None, pad_edge=False)
+        table.add_row("Location", location.name)
+        table.add_row("Region", location.region)
+        table.add_row("Hour", TIME_MARKERS[state.time_index % len(TIME_MARKERS)])
+        table.add_row("People", ", ".join(npc.name for npc in npcs[:4]) or "No one close enough to matter")
+        table.add_row("Exits", ", ".join(exit_names[:5]) or "No clear route")
+        if rumors:
+            table.add_row("Rumors", f"{len([r for r in rumors if r.discovered and not r.resolved])} pressing")
+        if missions:
+            active = [mission for mission in missions if mission.status == "active"]
+            table.add_row("Threads", f"{len(active)} active")
+        self.console.print(Panel(table, title=location.name, border_style=theme.SYSTEM))
+
+    def show_status(
+        self,
+        state: GameState,
+        location: LocationProfile,
+        people_count: int,
+        trust_hint: str,
+    ) -> None:
+        if not RICH_AVAILABLE:
+            print(
+                f"Paul: {state.player_name}, {state.player_title} | Pressure: {trust_hint} | "
+                f"Known places: {len(state.discovered_locations)} | Nearby: {people_count}"
+            )
+            return
+        table = Table(show_header=False, box=None, pad_edge=False)
+        table.add_row("Paul", f"{state.player_name}, {state.player_title}")
+        table.add_row("Present Pressure", trust_hint)
+        table.add_row("Known Places", str(len(state.discovered_locations)))
+        table.add_row("Known People", str(len(state.known_people)))
+        table.add_row("Nearby", f"{people_count} within the scene")
+        self.console.print(Panel(table, title="Present State", border_style=theme.ACCENT))
+
+    def show_options(self, title: str, lines: list[str]) -> None:
+        if not RICH_AVAILABLE:
+            print(f"\n{title}")
+            for line in lines:
+                print(f"- {line}")
+            return
+        self.console.print(Panel("\n".join(lines), title=title, border_style=theme.SYSTEM))
+
+    def divider(self) -> None:
+        if not RICH_AVAILABLE:
+            print("-" * 40)
+            return
+        self.console.rule(style=theme.ACCENT)
+
+    def _stream(self, text: str, style: str) -> None:
+        if not RICH_AVAILABLE:
+            print(text)
+            return
+        if self.config.reduced_motion or self.config.typewriter_delay <= 0:
+            self.console.print(f"[{style}]{text}[/{style}]")
+            return
+        for paragraph in text.split("\n"):
+            self.console.print(f"[{style}]{paragraph}[/{style}]")
+            time.sleep(self.config.typewriter_delay)

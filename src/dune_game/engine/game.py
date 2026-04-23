@@ -1,0 +1,666 @@
+from __future__ import annotations
+
+from random import choice
+from typing import Iterable
+
+try:
+    from rich.prompt import IntPrompt, Prompt
+except ModuleNotFoundError:
+    class Prompt:
+        @staticmethod
+        def ask(message: str) -> str:
+            return input(f"{message}: ")
+
+    class IntPrompt:
+        @staticmethod
+        def ask(message: str, default: int = 1) -> int:
+            raw = input(f"{message} ")
+            if not raw.strip():
+                return default
+            try:
+                return int(raw.strip())
+            except ValueError:
+                return default
+
+from dune_game.ai.client import OpenAIClient
+from dune_game.ai.world_ai import WorldAI
+from dune_game.config import Config
+from dune_game.domain.lore import LoreCatalog
+from dune_game.domain.models import GameState, LocationProfile, Mission, NpcState, ParsedCommand, Rumor, ShopProfile
+from dune_game.engine.commands import parse_command
+from dune_game.engine.saves import load_state, save_state
+from dune_game.ui.render import Renderer, TIME_MARKERS
+
+
+class GameApp:
+    def __init__(self, config: Config) -> None:
+        self.config = config
+        self.lore = LoreCatalog.load()
+        self.renderer = Renderer(config)
+        self.ai = WorldAI(OpenAIClient(config))
+        self.state: GameState | None = None
+
+    def run(self) -> None:
+        self.renderer.title("Dune Sandbox")
+        self.renderer.meta("Exploration-first Arrakis from Paul's viewpoint.")
+        self.renderer.intro()
+        if not self.ai.enabled:
+            self.renderer.system("OPENAI_API_KEY is not set. Fallback narration and local region generation are active.")
+
+        while True:
+            choice_value = self._startup_menu()
+            if choice_value == "quit":
+                return
+            if choice_value == "new":
+                self.state = self._new_game()
+                self._render_scene(opening=True)
+            else:
+                path = self.config.autosave_file if choice_value == "resume" else self.config.save_file
+                self.state = load_state(path)
+                self.renderer.system(f"Loaded {path.name}.")
+                self._render_scene(opening=True)
+
+            assert self.state is not None
+            while True:
+                raw = Prompt.ask(f"[bold yellow]{self.current_location().name}[/bold yellow]").strip()
+                command = parse_command(raw)
+                if command.kind == "empty":
+                    continue
+                outcome = self.handle_command(command)
+                if outcome == "menu":
+                    self.state = None
+                    break
+                if outcome == "quit":
+                    return
+
+    def _startup_menu(self) -> str:
+        options: list[tuple[str, str]] = [("New game", "new")]
+        if self.config.autosave_file.exists():
+            options.append(("Resume autosave", "resume"))
+        if self.config.save_file.exists():
+            options.append(("Load savegame", "load"))
+        options.append(("Quit", "quit"))
+        prompt = "  ".join(f"{idx + 1}) {label}" for idx, (label, _) in enumerate(options))
+        selected = IntPrompt.ask(prompt, default=1)
+        return options[max(0, min(selected - 1, len(options) - 1))][1]
+
+    def _new_game(self) -> GameState:
+        return GameState(
+            player_name=self.lore.player.name,
+            player_title=self.lore.player.title,
+            location_id="arrakeen_gate",
+            time_index=1,
+            inventory=self.lore.player.starting_inventory[:],
+            discovered_locations=["arrakeen_gate"],
+            visited_locations=["arrakeen_gate"],
+            known_people=["Lady Jessica"],
+            heard_rumor_ids=[],
+            journal=["You arrive in Arrakeen under the burden of rank, danger, and expectation."],
+            facts=["Arrakis rewards attention and punishes carelessness."],
+            faction_trust={"Atreides": 1, "Fremen": 0, "Smugglers": 0, "Imperial": -1},
+            npc_states={name: npc.to_dict() for name, npc in self.lore.npcs.items()},
+            rumors=[rumor.to_dict() for rumor in self.lore.rumors],
+            missions=[],
+            dynamic_locations={},
+            dynamic_shops={},
+            last_narration="",
+        )
+
+    def handle_command(self, command: ParsedCommand) -> str:
+        assert self.state is not None
+        if command.kind == "quit":
+            save_state(self.config.autosave_file, self.state)
+            self.renderer.system("The sands remember your passage.")
+            return "quit"
+        if command.kind == "help":
+            self._show_help()
+            return "continue"
+        if command.kind == "look":
+            self._render_scene()
+            return "continue"
+        if command.kind == "listen":
+            self._listen()
+            return "continue"
+        if command.kind == "people":
+            self._show_people()
+            return "continue"
+        if command.kind == "where":
+            self.renderer.system(
+                f"{self.current_location().name} | {TIME_MARKERS[self.state.time_index % len(TIME_MARKERS)]}"
+            )
+            return "continue"
+        if command.kind == "map":
+            self._show_map()
+            return "continue"
+        if command.kind == "rumors":
+            self._show_rumors()
+            return "continue"
+        if command.kind == "journal":
+            self._show_journal()
+            return "continue"
+        if command.kind == "save":
+            save_state(self.config.save_file, self.state)
+            self.renderer.system(f"Saved to {self.config.save_file.name}.")
+            return "continue"
+        if command.kind == "load":
+            if self.config.save_file.exists():
+                self.state = load_state(self.config.save_file)
+                self.renderer.system(f"Loaded {self.config.save_file.name}.")
+                self._render_scene(opening=True)
+            else:
+                self.renderer.error("No savegame exists yet.")
+            return "continue"
+        if command.kind == "inspect":
+            self._inspect(command.target or "")
+            return "continue"
+        if command.kind == "move":
+            self._move(command.target or "")
+            return "continue"
+        if command.kind == "travel":
+            self._travel(command.target or "")
+            return "continue"
+        if command.kind == "talk":
+            self._talk(command.target or "")
+            return "continue"
+        if command.kind == "ask":
+            self._ask(command.target or "", command.topic or "")
+            return "continue"
+        self._freeform(command.raw)
+        return "continue"
+
+    def current_location(self) -> LocationProfile:
+        assert self.state is not None
+        return self.all_locations()[self.state.location_id]
+
+    def all_locations(self) -> dict[str, LocationProfile]:
+        assert self.state is not None
+        dynamic = {
+            key: LocationProfile.from_dict(value)
+            for key, value in self.state.dynamic_locations.items()
+        }
+        return {**self.lore.locations, **dynamic}
+
+    def all_shops(self) -> dict[str, ShopProfile]:
+        assert self.state is not None
+        dynamic = {key: ShopProfile.from_dict(value) for key, value in self.state.dynamic_shops.items()}
+        return {**self.lore.shops, **dynamic}
+
+    def npc_states(self) -> dict[str, NpcState]:
+        assert self.state is not None
+        return {name: NpcState.from_dict(data) for name, data in self.state.npc_states.items()}
+
+    def rumors(self) -> list[Rumor]:
+        assert self.state is not None
+        return [Rumor.from_dict(item) for item in self.state.rumors]
+
+    def missions(self) -> list[Mission]:
+        assert self.state is not None
+        return [Mission.from_dict(item) for item in self.state.missions]
+
+    def _commit_npc_states(self, npc_states: dict[str, NpcState]) -> None:
+        assert self.state is not None
+        self.state.npc_states = {name: npc.to_dict() for name, npc in npc_states.items()}
+
+    def _commit_rumors(self, rumors: list[Rumor]) -> None:
+        assert self.state is not None
+        self.state.rumors = [rumor.to_dict() for rumor in rumors]
+
+    def _commit_missions(self, missions: list[Mission]) -> None:
+        assert self.state is not None
+        self.state.missions = [mission.to_dict() for mission in missions]
+
+    def _render_scene(self, *, opening: bool = False) -> None:
+        assert self.state is not None
+        location = self.current_location()
+        self._ensure_local_population(location)
+        npcs = self.present_npcs(location.id)
+        rumors = [rumor for rumor in self.rumors() if rumor.location_id == location.id and rumor.discovered]
+        shops = self.present_shops(location)
+        missions = [mission for mission in self.missions() if mission.status == "active"]
+        exit_names = [self.all_locations()[loc_id].name for loc_id in location.linked_locations if loc_id in self.all_locations()]
+        if opening or not self.state.last_narration:
+            description = self.ai.describe_location(location, npcs, shops, rumors, missions)
+            self.state.last_narration = description
+        else:
+            description = self.state.last_narration
+        self.renderer.location_card(self.state, location, npcs, exit_names, rumors, missions)
+        self.renderer.show_status(self.state, location, len(npcs), self._trust_hint())
+        self.renderer.narrate(description)
+        save_state(self.config.autosave_file, self.state)
+
+    def _trust_hint(self) -> str:
+        assert self.state is not None
+        levels = list(self.state.faction_trust.values()) or [0]
+        avg = sum(levels) / len(levels)
+        if avg <= -1:
+            return "The world around you is suspicious and brittle."
+        if avg < 1:
+            return "Nothing here is settled; every word is weighed."
+        return "Some doors stand less tightly closed than before."
+
+    def present_npcs(self, location_id: str) -> list[NpcState]:
+        npcs = [npc for npc in self.npc_states().values() if npc.current_location == location_id]
+        return sorted(npcs, key=lambda npc: (not npc.canonical, npc.name))
+
+    def present_shops(self, location: LocationProfile) -> list[ShopProfile]:
+        shops = self.all_shops()
+        return [shops[shop_id] for shop_id in location.shop_ids if shop_id in shops]
+
+    def _show_help(self) -> None:
+        self.renderer.show_options(
+            "Commands",
+            [
+                "look",
+                "inspect <thing>",
+                "listen",
+                "people",
+                "talk <name>",
+                "ask <name> about <topic>",
+                "move <place>",
+                "travel <place>",
+                "where",
+                "map",
+                "rumors",
+                "journal",
+                "save",
+                "load",
+                "quit",
+            ],
+        )
+
+    def _show_people(self) -> None:
+        location = self.current_location()
+        npcs = self.present_npcs(location.id)
+        if not npcs:
+            self.renderer.system("No one near enough seems willing to engage.")
+            return
+        lines = []
+        for npc in npcs:
+            trouble = f" Trouble: {npc.troubles[0]}." if npc.troubles else ""
+            lines.append(f"{npc.name}, {npc.title} [{npc.faction}] - {npc.summary}{trouble}")
+        self.renderer.show_options("People Near At Hand", lines)
+
+    def _show_map(self) -> None:
+        assert self.state is not None
+        location = self.current_location()
+        all_locations = self.all_locations()
+        lines = [f"Current: {location.name}"]
+        lines.extend(f"Road: {all_locations[loc_id].name}" for loc_id in location.linked_locations if loc_id in all_locations)
+        discovered = [
+            all_locations[loc_id].name
+            for loc_id in self.state.discovered_locations[-12:]
+            if loc_id in all_locations
+        ]
+        lines.append(f"Known terrain: {', '.join(discovered) or 'almost nothing yet'}")
+        self.renderer.show_options("Known Routes", lines)
+
+    def _show_rumors(self) -> None:
+        rumors = [rumor for rumor in self.rumors() if rumor.discovered]
+        if not rumors:
+            self.renderer.system("You have not yet gathered a rumor worth keeping.")
+            return
+        lines = []
+        for rumor in rumors[-8:]:
+            status = "resolved" if rumor.resolved else "alive"
+            lines.append(f"[{status}] {rumor.text}")
+        self.renderer.show_options("Rumors", lines)
+
+    def _show_journal(self) -> None:
+        assert self.state is not None
+        missions = self.missions()
+        lines: list[str] = []
+        if missions:
+            for mission in missions[-6:]:
+                lines.append(f"{mission.title} [{mission.status}] - {mission.description}")
+        if self.state.journal:
+            lines.extend(self.state.journal[-6:])
+        self.renderer.show_options("Journal", lines or ["No written threads yet."])
+
+    def _listen(self) -> None:
+        assert self.state is not None
+        location = self.current_location()
+        rumors = self.rumors()
+        local = [rumor for rumor in rumors if rumor.location_id == location.id and not rumor.discovered]
+        if local:
+            heard = local[0]
+            heard.discovered = True
+            if heard.id not in self.state.heard_rumor_ids:
+                self.state.heard_rumor_ids.append(heard.id)
+            self.state.journal.append(f"Heard rumor: {heard.text}")
+            self._commit_rumors(rumors)
+            self._spawn_mission_from_rumor(heard)
+            self._advance_time()
+            self.renderer.narrate(
+                f"You keep still long enough to hear what the place is trying not to say. {heard.text}"
+            )
+            save_state(self.config.autosave_file, self.state)
+            return
+        line = choice(
+            [
+                "The place speaks in quieter terms: sandal scrape, bargaining restraint, and the unease of people who know walls carry words.",
+                "Nothing definite rises above the ordinary caution of Arrakis, yet the scene remains full of withheld meaning.",
+            ]
+        )
+        self.renderer.narrate(line)
+
+    def _inspect(self, target: str) -> None:
+        assert self.state is not None
+        if not target:
+            self.renderer.error("Inspect what?")
+            return
+        location = self.current_location()
+        lowered = target.lower()
+        for landmark in location.landmarks:
+            if lowered in landmark.lower():
+                detail = self.ai.narrate_action(location, f"inspect {landmark}")
+                self.state.facts.append(f"{location.name}: {landmark}")
+                self.state.journal.append(f"Inspected {landmark} in {location.name}.")
+                self.state.last_narration = detail
+                self._advance_time()
+                self.renderer.narrate(detail)
+                save_state(self.config.autosave_file, self.state)
+                return
+        shops = self.present_shops(location)
+        for shop in shops:
+            if lowered in shop.name.lower() or lowered in shop.owner.lower():
+                text = (
+                    f"{shop.name} carries the look of necessity rather than luxury. {shop.flavor} "
+                    f"Goods in sight include {', '.join(shop.goods[:4])}."
+                )
+                self.state.journal.append(f"Inspected {shop.name}.")
+                self.renderer.narrate(text)
+                return
+        npc = self.lore.find_npc(target, self.npc_states(), location.id)
+        if npc is not None:
+            line = (
+                f"{npc.name} bears the marks of {npc.summary.lower()} The person's manner suggests "
+                f"{', '.join(npc.traits[:2])}, and perhaps more caution than courtesy."
+            )
+            self.state.facts.append(f"{npc.name}: {npc.summary}")
+            self.state.known_people = list(dict.fromkeys(self.state.known_people + [npc.name]))
+            self.renderer.narrate(line)
+            return
+        self.renderer.error("Nothing by that name stands clearly before you.")
+
+    def _move(self, target: str) -> None:
+        assert self.state is not None
+        if not target:
+            self.renderer.error("Move where?")
+            return
+        location = self.current_location()
+        all_locations = self.all_locations()
+        target_location = self.lore.find_location(target, {loc_id: all_locations[loc_id] for loc_id in location.linked_locations if loc_id in all_locations})
+        if target_location is None:
+            self.renderer.error("No such nearby route is open from here.")
+            return
+        self._arrive(target_location, traveled=True)
+
+    def _travel(self, target: str) -> None:
+        assert self.state is not None
+        if not target:
+            self.renderer.error("Travel where?")
+            return
+        all_locations = self.all_locations()
+        existing = self.lore.find_location(target, all_locations)
+        if existing is not None:
+            self._arrive(existing, traveled=True, long_route=True)
+            return
+        if not self.current_location().can_expand:
+            self.renderer.error("No plausible long route suggests itself from here. Try listening for a lead first.")
+            return
+        self._generate_region(target)
+
+    def _arrive(self, location: LocationProfile, *, traveled: bool, long_route: bool = False) -> None:
+        assert self.state is not None
+        self.state.location_id = location.id
+        self.state.discovered_locations = list(dict.fromkeys(self.state.discovered_locations + [location.id]))
+        self.state.visited_locations.append(location.id)
+        self.state.journal.append(
+            f"Reached {location.name}{' by a longer route' if long_route else ''}."
+        )
+        if location.resident_npcs:
+            self.state.known_people = list(dict.fromkeys(self.state.known_people + location.resident_npcs[:2]))
+        self._ensure_local_population(location)
+        self._advance_time(amount=2 if traveled else 1)
+        self._drift_npcs()
+        self.state.last_narration = self.ai.describe_location(
+            location,
+            self.present_npcs(location.id),
+            self.present_shops(location),
+            [rumor for rumor in self.rumors() if rumor.location_id == location.id and rumor.discovered],
+            [mission for mission in self.missions() if mission.status == "active"],
+        )
+        self._render_scene()
+
+    def _talk(self, target: str) -> None:
+        assert self.state is not None
+        if not target:
+            self.renderer.error("Talk to whom?")
+            return
+        npc_states = self.npc_states()
+        npc = self.lore.find_npc(target, npc_states, self.current_location().id)
+        if npc is None:
+            self.renderer.error("No one by that name is presently before you.")
+            return
+        self.state.known_people = list(dict.fromkeys(self.state.known_people + [npc.name]))
+        self.renderer.system(f"You turn to {npc.name}. Type 'bye' to step away.")
+        while True:
+            line = Prompt.ask("Paul").strip()
+            if line.lower() in {"bye", "leave", "goodbye", "back"}:
+                self.renderer.system("You return your attention to the larger scene.")
+                self._commit_npc_states(npc_states)
+                save_state(self.config.autosave_file, self.state)
+                return
+            reply = self.ai.npc_reply(npc, self.current_location(), line)
+            npc.memory.append({"speaker": "Paul", "text": line})
+            npc.memory.append({"speaker": npc.name, "text": reply})
+            npc.memory = npc.memory[-12:]
+            if npc.disposition < 3:
+                npc.disposition += 1
+            self._maybe_create_personal_mission(npc)
+            self._nudge_faction(npc.faction, 1)
+            self._advance_time()
+            self.renderer.npc(npc.name, reply)
+
+    def _ask(self, target: str, topic: str) -> None:
+        if not target or not topic:
+            self.renderer.error("Use 'ask <name> about <topic>'.")
+            return
+        npc_states = self.npc_states()
+        npc = self.lore.find_npc(target, npc_states, self.current_location().id)
+        if npc is None:
+            self.renderer.error("That person is not here.")
+            return
+        reply = self.ai.npc_reply(npc, self.current_location(), f"Tell me about {topic}.")
+        npc.memory.append({"speaker": "Paul", "text": f"Asked about {topic}"})
+        npc.memory.append({"speaker": npc.name, "text": reply})
+        if topic.lower() in {"water", "spice", "smugglers", "fremen", "harkonnen", "palace"}:
+            self.state.facts.append(f"{npc.name} spoke of {topic}.")
+        self._commit_npc_states(npc_states)
+        self._advance_time()
+        self.renderer.npc(npc.name, reply)
+
+    def _freeform(self, raw: str) -> None:
+        assert self.state is not None
+        line = self.ai.narrate_action(self.current_location(), raw)
+        self.state.journal.append(f"Tried: {raw}")
+        self.state.last_narration = line
+        self._advance_time()
+        self.renderer.narrate(line)
+
+    def _spawn_mission_from_rumor(self, rumor: Rumor) -> None:
+        missions = self.missions()
+        if any(mission.id == f"mission_{rumor.id}" for mission in missions):
+            return
+        title = {
+            "water": "Quiet Water Trouble",
+            "smugglers": "Hidden Caravan Thread",
+            "palace": "Pressure In The Court",
+            "fremen": "A Desert Understanding",
+            "spice": "Spice Labor Question",
+        }.get(rumor.topic, "An Uneasy Thread")
+        missions.append(
+            Mission(
+                id=f"mission_{rumor.id}",
+                title=title,
+                description=rumor.text,
+                giver=rumor.source,
+                location_id=rumor.location_id,
+                kind="rumor",
+                notes=[
+                    f"Listen further in {self.all_locations()[rumor.location_id].name}.",
+                    f"Seek whoever stands nearest to {rumor.person_hint or rumor.source}.",
+                ],
+            )
+        )
+        self._commit_missions(missions)
+
+    def _maybe_create_personal_mission(self, npc: NpcState) -> None:
+        assert self.state is not None
+        missions = self.missions()
+        mission_id = f"favor_{_slug(npc.name)}"
+        if npc.troubles and not any(mission.id == mission_id for mission in missions):
+            missions.append(
+                Mission(
+                    id=mission_id,
+                    title=f"A Favor For {npc.name}",
+                    description=npc.troubles[0],
+                    giver=npc.name,
+                    location_id=npc.current_location,
+                    kind="favor",
+                    notes=[f"Return to {npc.name} after learning more."],
+                )
+            )
+            self.state.journal.append(f"{npc.name} now seems tied to a possible favor: {npc.troubles[0]}.")
+            self._commit_missions(missions)
+
+    def _generate_region(self, requested_name: str) -> None:
+        assert self.state is not None
+        frontier = self.current_location()
+        region = self.ai.generate_region(frontier, requested_name)
+        region_locations: list[LocationProfile] = []
+        prior_id = frontier.id
+        for raw in region["locations"]:
+            loc = LocationProfile(
+                id=raw["id"],
+                name=raw["name"],
+                region=region["region_name"],
+                kind=raw["kind"],
+                summary=raw["summary"],
+                atmosphere=raw["atmosphere"],
+                landmarks=raw["landmarks"],
+                linked_locations=[prior_id],
+                resident_npcs=[],
+                rumor_tags=["generated", "frontier"],
+                travel_keywords=raw["travel_keywords"],
+                can_expand=True,
+                generated=True,
+            )
+            if region_locations:
+                region_locations[-1].linked_locations.append(loc.id)
+                loc.linked_locations.append(region_locations[-1].id)
+            region_locations.append(loc)
+            prior_id = loc.id
+
+        all_locations = self.all_locations()
+        if region_locations:
+            if region_locations[0].id not in all_locations[frontier.id].linked_locations:
+                all_locations[frontier.id].linked_locations.append(region_locations[0].id)
+            if frontier.id in self.lore.locations:
+                self.lore.locations[frontier.id].linked_locations = all_locations[frontier.id].linked_locations
+
+        for loc in region_locations:
+            self.state.dynamic_locations[loc.id] = loc.to_dict()
+
+        npc_states = self.npc_states()
+        for idx, raw_npc in enumerate(region["npcs"]):
+            anchor_location = region_locations[min(idx, len(region_locations) - 1)]
+            npc = NpcState(
+                name=raw_npc["name"],
+                title=raw_npc["title"],
+                faction=raw_npc["faction"],
+                summary=raw_npc["summary"],
+                speech_style=["guarded", "spare", "watchful"],
+                traits=raw_npc["traits"],
+                home_location=anchor_location.id,
+                current_location=anchor_location.id,
+                generated=True,
+                troubles=raw_npc["troubles"],
+                secrets=raw_npc["secrets"],
+            )
+            npc_states[npc.name] = npc
+            anchor_location.resident_npcs.append(npc.name)
+            self.state.known_people = list(dict.fromkeys(self.state.known_people + [npc.name]))
+            self.state.dynamic_locations[anchor_location.id] = anchor_location.to_dict()
+
+        rumor = Rumor(
+            id=f"generated_{_slug(region['region_name'])}",
+            text=region["rumor"],
+            source=frontier.name,
+            location_id=region_locations[0].id,
+            topic="frontier",
+            leads_to=region_locations[-1].id,
+            discovered=True,
+        )
+        rumors = self.rumors()
+        rumors.append(rumor)
+        self._commit_rumors(rumors)
+        self._commit_npc_states(npc_states)
+        self.state.journal.append(f"Discovered a new region: {region['region_name']}.")
+        self._spawn_mission_from_rumor(rumor)
+        self._arrive(region_locations[0], traveled=True, long_route=True)
+
+    def _advance_time(self, amount: int = 1) -> None:
+        assert self.state is not None
+        self.state.time_index = (self.state.time_index + amount) % len(TIME_MARKERS)
+
+    def _nudge_faction(self, faction: str, delta: int) -> None:
+        assert self.state is not None
+        self.state.faction_trust[faction] = self.state.faction_trust.get(faction, 0) + delta
+
+    def _drift_npcs(self) -> None:
+        npc_states = self.npc_states()
+        location = self.current_location()
+        for npc in npc_states.values():
+            if npc.generated and npc.current_location == npc.home_location and location.id != npc.current_location:
+                continue
+            if npc.shop_id:
+                npc.current_location = npc.home_location
+            elif npc.generated and location.id in self.all_locations():
+                npc.current_location = choice([npc.current_location, npc.home_location])
+        self._commit_npc_states(npc_states)
+
+    def _ensure_local_population(self, location: LocationProfile) -> None:
+        npc_states = self.npc_states()
+        present = [npc for npc in npc_states.values() if npc.current_location == location.id]
+        target_count = 2 if location.kind in {"city", "palace", "industrial", "settlement"} else 1
+        existing_names = list(npc_states.keys())
+        created = False
+        while len(present) < target_count:
+            raw = self.ai.generate_local_npc(location, existing_names)
+            npc = NpcState(
+                name=raw["name"],
+                title=raw["title"],
+                faction=raw["faction"],
+                summary=raw["summary"],
+                speech_style=["guarded", "plain", "socially aware"],
+                traits=raw["traits"],
+                home_location=location.id,
+                current_location=location.id,
+                generated=True,
+                troubles=raw["troubles"],
+                secrets=raw["secrets"],
+            )
+            npc_states[npc.name] = npc
+            present.append(npc)
+            existing_names.append(npc.name)
+            created = True
+        if created:
+            self._commit_npc_states(npc_states)
+
+
+def _slug(text: str) -> str:
+    clean = "".join(ch.lower() if ch.isalnum() else "_" for ch in text)
+    while "__" in clean:
+        clean = clean.replace("__", "_")
+    return clean.strip("_")

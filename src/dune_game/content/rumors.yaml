@@ -1,0 +1,52 @@
+{
+  "rumors": [
+    {
+      "id": "water_accounts",
+      "text": "Water tallies in the market have been adjusted in ways that punish the poor while sparing the connected.",
+      "source": "Harah",
+      "location_id": "market_quarter",
+      "topic": "water",
+      "person_hint": "Harah"
+    },
+    {
+      "id": "caravan_leak",
+      "text": "Caravan manifests no longer agree with the weight of what reaches the square, and the losses are too orderly to be random.",
+      "source": "Caravan Square",
+      "location_id": "caravan_square",
+      "topic": "smugglers",
+      "person_hint": "Esmar Tuek"
+    },
+    {
+      "id": "court_whispers",
+      "text": "The palace speaks softly because too many people now fear the same future for different reasons.",
+      "source": "Palace servants",
+      "location_id": "palace_outer_court",
+      "topic": "palace",
+      "person_hint": "Lady Jessica"
+    },
+    {
+      "id": "warehouse_losses",
+      "text": "Men assigned to short warehouse duty come back altered, or not at all.",
+      "source": "Worker Quarter",
+      "location_id": "worker_quarter",
+      "topic": "spice",
+      "person_hint": "Otheym"
+    },
+    {
+      "id": "desert_signs",
+      "text": "The desert routes are shifting around some larger design, and not all the signs are Fremen-made.",
+      "source": "Desert scouts",
+      "location_id": "shield_wall_path",
+      "topic": "fremen",
+      "person_hint": "Stilgar"
+    },
+    {
+      "id": "station_quiet",
+      "text": "The ecological station keeps records the city would call harmless until the day it feared them.",
+      "source": "Station assistant",
+      "location_id": "ecological_station",
+      "topic": "fremen",
+      "person_hint": "Liet-Kynes"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+autosave.json
+savegame.json
+__pycache__/
+*.pyc
+*.egg-info/

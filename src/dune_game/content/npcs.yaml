@@ -1,0 +1,151 @@
+{
+  "player": {
+    "name": "Paul Atreides",
+    "title": "Duke's Son",
+    "summary": "Young heir under pressure from politics, prophecy, and survival.",
+    "voice_notes": ["perceptive", "burdened by intuition", "controlled under scrutiny"],
+    "starting_inventory": ["stillsuit", "crysknife", "ducal signet"]
+  },
+  "npcs": [
+    {
+      "name": "Lady Jessica",
+      "title": "Bene Gesserit Adept",
+      "faction": "Atreides",
+      "summary": "She moves through danger with intelligence so controlled it can seem like calm.",
+      "speech_style": ["precise", "layered", "composed"],
+      "traits": ["observant", "disciplined", "politically exact"],
+      "home_location": "palace_outer_court",
+      "canonical": true,
+      "troubles": ["She is trying to protect Paul without tightening the net around him further."],
+      "secrets": ["She is weighing every court movement against private fears she cannot safely confess."],
+      "rumor_ids": ["court_whispers"]
+    },
+    {
+      "name": "Gurney Halleck",
+      "title": "Warmaster",
+      "faction": "Atreides",
+      "summary": "A soldier-poet whose loyalty is hard enough to endure suspicion, grief, and failure.",
+      "speech_style": ["dry", "martial", "direct"],
+      "traits": ["loyal", "sardonic", "vigilant"],
+      "home_location": "hall_of_banners",
+      "canonical": true,
+      "troubles": ["He suspects information is leaking through seemingly harmless servants and routes."],
+      "secrets": ["He has begun keeping his own list of small inconsistencies in the city."],
+      "rumor_ids": ["caravan_leak"]
+    },
+    {
+      "name": "Chani",
+      "title": "Fremen Scout",
+      "faction": "Fremen",
+      "summary": "She watches the world with desert exactness and no patience for posturing.",
+      "speech_style": ["spare", "intelligent", "unsentimental"],
+      "traits": ["fierce", "observant", "grounded"],
+      "home_location": "hidden_basin",
+      "canonical": true,
+      "troubles": ["She is uncertain whether Paul can bear the truth of Arrakis without trying to master it."],
+      "secrets": ["She is already measuring which people around Paul might someday endanger the sietch."],
+      "rumor_ids": ["desert_signs"]
+    },
+    {
+      "name": "Stilgar",
+      "title": "Naib",
+      "faction": "Fremen",
+      "summary": "Authority sits on him without decoration; he speaks like a man accustomed to necessity.",
+      "speech_style": ["measured", "practical", "stern"],
+      "traits": ["honorable", "severe", "strategic"],
+      "home_location": "hidden_basin",
+      "canonical": true,
+      "troubles": ["He is trying to judge whether alliance can exist without surrender."],
+      "secrets": ["He is tracking which city routes might be useful if violence comes early."],
+      "rumor_ids": ["desert_signs"]
+    },
+    {
+      "name": "Duncan Idaho",
+      "title": "Swordmaster",
+      "faction": "Atreides",
+      "summary": "Bold presence masking hard-earned adaptability and a growing sympathy for the desert people.",
+      "speech_style": ["frank", "confident", "warm"],
+      "traits": ["brave", "adaptable", "loyal"],
+      "home_location": "desert_edge",
+      "canonical": true,
+      "troubles": ["He is trying to hold two worlds in the same hand without dropping either."],
+      "secrets": ["He has seen enough of the deep desert to fear how little the city understands it."],
+      "rumor_ids": ["desert_signs"]
+    },
+    {
+      "name": "Princess Irulan",
+      "title": "Imperial Observer",
+      "faction": "Imperial",
+      "summary": "Her gaze is scholarly but never neutral; she notes power the way others note weather.",
+      "speech_style": ["analytical", "polished", "careful"],
+      "traits": ["diplomatic", "incisive", "politically trained"],
+      "home_location": "pilots_quarter",
+      "canonical": true,
+      "troubles": ["She is trying to understand the Atreides rise without misreading the deeper movement around it."],
+      "secrets": ["She keeps private records that differ from the official shape of events."],
+      "rumor_ids": ["court_whispers"]
+    },
+    {
+      "name": "Liet-Kynes",
+      "title": "Imperial Planetologist",
+      "faction": "Fremen-aligned",
+      "summary": "Dry-minded and visionary at once, seeing systems where others see only immediate struggle.",
+      "speech_style": ["measured", "conceptual", "quietly passionate"],
+      "traits": ["analytical", "patient", "uncompromising"],
+      "home_location": "ecological_station",
+      "canonical": true,
+      "troubles": ["He needs certain movements in the city to remain invisible to the wrong sort of clerk."],
+      "secrets": ["He knows of water plans that would look seditious to those unable to imagine centuries."],
+      "rumor_ids": ["station_quiet"]
+    },
+    {
+      "name": "Harah",
+      "title": "Water Seller",
+      "faction": "Independent",
+      "summary": "Practical, sharp, and too used to hearing what frightened people say when they think no one matters nearby.",
+      "speech_style": ["earthy", "clipped", "shrewd"],
+      "traits": ["pragmatic", "sympathetic", "guarded"],
+      "home_location": "market_quarter",
+      "shop_id": "market_water_seller",
+      "troubles": ["Her cousins are being squeezed by water accounting far beyond what they can pay."],
+      "secrets": ["She keeps one list for customers and another for people in genuine need."],
+      "rumor_ids": ["water_accounts"]
+    },
+    {
+      "name": "Otheym",
+      "title": "Labor Organizer",
+      "faction": "Fremen-aligned",
+      "summary": "A laboring man whose caution has become political instinct.",
+      "speech_style": ["plain", "wary", "humane"],
+      "traits": ["steadfast", "suspicious", "communal"],
+      "home_location": "worker_quarter",
+      "troubles": ["Workers keep disappearing into 'temporary duty' near the warehouses."],
+      "secrets": ["He is sending quiet warnings through the district rather than open protest."],
+      "rumor_ids": ["warehouse_losses"]
+    },
+    {
+      "name": "Esmar Tuek",
+      "title": "Caravan Factor",
+      "faction": "Smugglers",
+      "summary": "Courtly in manner when useful, ruthless in accounting when required.",
+      "speech_style": ["smooth", "exact", "ironic"],
+      "traits": ["clever", "mercantile", "hard to trust"],
+      "home_location": "caravan_square",
+      "troubles": ["Too many loads are arriving already light, and someone is lying about where the loss begins."],
+      "secrets": ["He profits from certain routes remaining officially impossible."],
+      "rumor_ids": ["caravan_leak"]
+    },
+    {
+      "name": "Shadout Mapes",
+      "title": "Housekeeper",
+      "faction": "Palace",
+      "summary": "She carries ritual seriousness into ordinary service, as if every tool might become a test.",
+      "speech_style": ["reverent", "guarded", "symbolic"],
+      "traits": ["devout", "perceptive", "dignified"],
+      "home_location": "smugglers_alley",
+      "troubles": ["She fears that the city is turning faster toward blood than many yet understand."],
+      "secrets": ["She is watching for signs she does not dare name aloud to most people."],
+      "rumor_ids": ["court_whispers"]
+    }
+  ]
+}

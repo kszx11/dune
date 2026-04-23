@@ -1,0 +1,36 @@
+{
+  "shops": [
+    {
+      "id": "market_water_seller",
+      "name": "Harah's Water Counter",
+      "owner": "Harah",
+      "location_id": "market_quarter",
+      "flavor": "Water is measured here with the severity of law and the intimacy of mercy.",
+      "goods": ["water rings", "ration tabs", "sealed cups"]
+    },
+    {
+      "id": "market_stillsuit_fitter",
+      "name": "Sandfit Stillsuit Rooms",
+      "owner": "Tazir",
+      "location_id": "market_quarter",
+      "flavor": "The proprietor speaks little and judges everyone first by their waste of motion.",
+      "goods": ["stillsuit patches", "desert wraps", "filter cloth"]
+    },
+    {
+      "id": "caravan_outfitters",
+      "name": "Berthside Outfitters",
+      "owner": "Ommad",
+      "location_id": "caravan_square",
+      "flavor": "Tools for travel sit beside ledgers that reveal who is preparing for routes they do not admit to taking.",
+      "goods": ["desert hooks", "route flags", "sealed packs"]
+    },
+    {
+      "id": "shadow_broker_stall",
+      "name": "Shadow Broker Stall",
+      "owner": "Ilban",
+      "location_id": "smugglers_alley",
+      "flavor": "Nothing is displayed honestly, least of all intentions.",
+      "goods": ["coded tokens", "false manifests", "quiet introductions"]
+    }
+  ]
+}
