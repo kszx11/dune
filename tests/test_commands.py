@@ -22,3 +22,19 @@ def test_parse_menu_command() -> None:
 def test_parse_hint_command() -> None:
     parsed = parse_command("hint")
     assert parsed.kind == "hint"
+
+
+def test_parse_go_area_command() -> None:
+    parsed = parse_command("go water ring stall")
+    assert parsed.kind == "go_area"
+    assert parsed.target == "water ring stall"
+
+
+def test_parse_enter_command() -> None:
+    parsed = parse_command("enter Harah's Water Counter")
+    assert parsed.kind == "enter"
+
+
+def test_parse_leave_command() -> None:
+    parsed = parse_command("leave")
+    assert parsed.kind == "leave"

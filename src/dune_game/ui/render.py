@@ -15,7 +15,7 @@ except ModuleNotFoundError:
     RICH_AVAILABLE = False
 
 from dune_game.config import Config
-from dune_game.domain.models import GameState, LocationProfile, Mission, NpcState, Rumor
+from dune_game.domain.models import AreaProfile, GameState, LocationProfile, Mission, NpcState, Rumor
 from dune_game.ui import theme
 
 
@@ -83,6 +83,7 @@ class Renderer:
         self,
         state: GameState,
         location: LocationProfile,
+        area: AreaProfile | None,
         npcs: list[NpcState],
         exit_names: list[str],
         rumors: list[Rumor],
@@ -90,6 +91,8 @@ class Renderer:
     ) -> None:
         if not RICH_AVAILABLE:
             print(f"\n[{location.name}]")
+            if area is not None:
+                print(f"Area: {area.name}")
             print(f"Region: {location.region}")
             print(f"Hour: {TIME_MARKERS[state.time_index % len(TIME_MARKERS)]}")
             print(f"People: {', '.join(npc.name for npc in npcs[:4]) or 'No one close enough to matter'}")
@@ -97,6 +100,8 @@ class Renderer:
             return
         table = Table(show_header=False, box=None, pad_edge=False)
         table.add_row("Location", location.name)
+        if area is not None:
+            table.add_row("Area", area.name)
         table.add_row("Region", location.region)
         table.add_row("Hour", TIME_MARKERS[state.time_index % len(TIME_MARKERS)])
         table.add_row("People", ", ".join(npc.name for npc in npcs[:4]) or "No one close enough to matter")
@@ -112,6 +117,7 @@ class Renderer:
         self,
         state: GameState,
         location: LocationProfile,
+        area: AreaProfile | None,
         people_count: int,
         trust_hint: str,
         suggestions: list[str],
@@ -121,11 +127,15 @@ class Renderer:
                 f"Paul: {state.player_name}, {state.player_title} | Pressure: {trust_hint} | "
                 f"Known places: {len(state.discovered_locations)} | Nearby: {people_count}"
             )
+            if area is not None:
+                print(f"Area: {area.name}")
             if suggestions:
                 print(f"Suggestions: {' | '.join(suggestions[:2])}")
             return
         table = Table(show_header=False, box=None, pad_edge=False)
         table.add_row("Paul", f"{state.player_name}, {state.player_title}")
+        if area is not None:
+            table.add_row("Area", area.name)
         table.add_row("Present Pressure", trust_hint)
         table.add_row("Known Places", str(len(state.discovered_locations)))
         table.add_row("Known People", str(len(state.known_people)))

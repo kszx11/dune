@@ -26,7 +26,7 @@ from dune_game.ai.client import OpenAIClient
 from dune_game.ai.world_ai import WorldAI
 from dune_game.config import Config
 from dune_game.domain.lore import LoreCatalog
-from dune_game.domain.models import GameState, LocationProfile, Mission, NpcState, ParsedCommand, Rumor, ShopProfile
+from dune_game.domain.models import AreaProfile, GameState, LocationProfile, Mission, NpcState, ParsedCommand, Rumor, ShopProfile
 from dune_game.engine.commands import parse_command
 from dune_game.engine.saves import load_state, save_state
 from dune_game.ui.render import Renderer, TIME_MARKERS
@@ -62,7 +62,7 @@ class GameApp:
 
             assert self.state is not None
             while True:
-                raw = Prompt.ask(f"[bold yellow]{self.current_location().name}[/bold yellow]").strip()
+                raw = Prompt.ask(f"[bold yellow]{self._prompt_name()}[/bold yellow]").strip()
                 command = parse_command(raw)
                 if command.kind == "empty":
                     continue
@@ -89,9 +89,11 @@ class GameApp:
             player_name=self.lore.player.name,
             player_title=self.lore.player.title,
             location_id="arrakeen_gate",
+            area_id="",
             time_index=1,
             inventory=self.lore.player.starting_inventory[:],
             discovered_locations=["arrakeen_gate"],
+            discovered_areas=[],
             visited_locations=["arrakeen_gate"],
             known_people=["Lady Jessica"],
             heard_rumor_ids=[],
@@ -122,6 +124,9 @@ class GameApp:
         if command.kind == "hint":
             self._show_hint()
             return "continue"
+        if command.kind == "areas":
+            self._show_areas()
+            return "continue"
         if command.kind == "look":
             self._render_scene()
             return "continue"
@@ -132,9 +137,9 @@ class GameApp:
             self._show_people()
             return "continue"
         if command.kind == "where":
-            self.renderer.system(
-                f"{self.current_location().name} | {TIME_MARKERS[self.state.time_index % len(TIME_MARKERS)]}"
-            )
+            area = self.current_area()
+            place = self.current_location().name if area is None else f"{self.current_location().name} / {area.name}"
+            self.renderer.system(f"{place} | {TIME_MARKERS[self.state.time_index % len(TIME_MARKERS)]}")
             return "continue"
         if command.kind == "map":
             self._show_map()
@@ -163,6 +168,15 @@ class GameApp:
         if command.kind == "move":
             self._move(command.target or "")
             return "continue"
+        if command.kind == "go_area":
+            self._go_area(command.target or "")
+            return "continue"
+        if command.kind == "enter":
+            self._enter_shop(command.target or "")
+            return "continue"
+        if command.kind == "leave":
+            self._leave_area()
+            return "continue"
         if command.kind == "travel":
             self._travel(command.target or "")
             return "continue"
@@ -179,6 +193,12 @@ class GameApp:
         assert self.state is not None
         return self.all_locations()[self.state.location_id]
 
+    def current_area(self) -> AreaProfile | None:
+        assert self.state is not None
+        if not self.state.area_id:
+            return None
+        return self.all_areas().get(self.state.area_id)
+
     def all_locations(self) -> dict[str, LocationProfile]:
         assert self.state is not None
         dynamic = {
@@ -186,6 +206,9 @@ class GameApp:
             for key, value in self.state.dynamic_locations.items()
         }
         return {**self.lore.locations, **dynamic}
+
+    def all_areas(self) -> dict[str, AreaProfile]:
+        return self.lore.areas
 
     def all_shops(self) -> dict[str, ShopProfile]:
         assert self.state is not None
@@ -219,20 +242,27 @@ class GameApp:
     def _render_scene(self, *, opening: bool = False) -> None:
         assert self.state is not None
         location = self.current_location()
-        self._ensure_local_population(location)
-        npcs = self.present_npcs(location.id)
+        area = self.current_area()
+        if area is not None:
+            self._ensure_area_population(location, area)
+        else:
+            self._ensure_local_population(location)
+        npcs = self.present_npcs(location.id, area.id if area is not None else "")
         rumors = [rumor for rumor in self.rumors() if rumor.location_id == location.id and rumor.discovered]
-        shops = self.present_shops(location)
+        shops = self.present_shops(location, area.id if area is not None else "")
         missions = [mission for mission in self.missions() if mission.status == "active"]
-        exit_names = [self.all_locations()[loc_id].name for loc_id in location.linked_locations if loc_id in self.all_locations()]
+        exit_names = self._scene_exit_names(location, area)
         self._refresh_suggestions()
         if opening or not self.state.last_narration:
-            description = self.ai.describe_location(location, npcs, shops, rumors, missions)
+            if area is not None:
+                description = self.ai.describe_area(location, area, npcs, shops, rumors, missions)
+            else:
+                description = self.ai.describe_location(location, npcs, shops, rumors, missions)
             self.state.last_narration = description
         else:
             description = self.state.last_narration
-        self.renderer.location_card(self.state, location, npcs, exit_names, rumors, missions)
-        self.renderer.show_status(self.state, location, len(npcs), self._trust_hint(), self.state.suggestions)
+        self.renderer.location_card(self.state, location, area, npcs, exit_names, rumors, missions)
+        self.renderer.show_status(self.state, location, area, len(npcs), self._trust_hint(), self.state.suggestions)
         self.renderer.narrate(description)
         save_state(self.config.autosave_file, self.state)
 
@@ -246,12 +276,20 @@ class GameApp:
             return "Nothing here is settled; every word is weighed."
         return "Some doors stand less tightly closed than before."
 
-    def present_npcs(self, location_id: str) -> list[NpcState]:
-        npcs = [npc for npc in self.npc_states().values() if npc.current_location == location_id]
+    def present_npcs(self, location_id: str, area_id: str = "") -> list[NpcState]:
+        npcs = [
+            npc for npc in self.npc_states().values()
+            if npc.current_location == location_id and npc.current_area == area_id
+        ]
         return sorted(npcs, key=lambda npc: (not npc.canonical, npc.name))
 
-    def present_shops(self, location: LocationProfile) -> list[ShopProfile]:
+    def present_shops(self, location: LocationProfile, area_id: str = "") -> list[ShopProfile]:
         shops = self.all_shops()
+        if area_id:
+            return [
+                shop for shop in shops.values()
+                if shop.location_id == location.id and (shop.area_id == area_id or shop.interior_area_id == area_id)
+            ]
         return [shops[shop_id] for shop_id in location.shop_ids if shop_id in shops]
 
     def _show_help(self) -> None:
@@ -260,11 +298,15 @@ class GameApp:
             [
                 "look",
                 "hint",
+                "areas",
                 "inspect <thing>",
                 "listen",
                 "people",
                 "talk <name>",
                 "ask <name> about <topic>",
+                "go <area>",
+                "enter <shop>",
+                "leave",
                 "move <place>",
                 "travel <place>",
                 "where",
@@ -284,9 +326,25 @@ class GameApp:
         lines = self.state.suggestions[:] or ["Nothing presses strongly at the moment. Look, listen, or speak with someone nearby."]
         self.renderer.show_options("Quiet Guidance", lines)
 
+    def _show_areas(self) -> None:
+        location = self.current_location()
+        current_area = self.current_area()
+        areas = self.areas_for_location(location.id)
+        if not areas:
+            self.renderer.system("This place does not open into smaller spaces yet.")
+            return
+        if current_area is None:
+            lines = [f"{area.name} - {area.summary}" for area in areas]
+        else:
+            linked = [self.all_areas()[area_id] for area_id in current_area.linked_areas if area_id in self.all_areas()]
+            lines = [f"{area.name} - {area.summary}" for area in linked]
+            lines.append("Use 'leave' to return to the broader location.")
+        self.renderer.show_options("Internal Areas", lines)
+
     def _show_people(self) -> None:
         location = self.current_location()
-        npcs = self.present_npcs(location.id)
+        area = self.current_area()
+        npcs = self.present_npcs(location.id, area.id if area is not None else "")
         if not npcs:
             self.renderer.system("No one near enough seems willing to engage.")
             return
@@ -299,9 +357,18 @@ class GameApp:
     def _show_map(self) -> None:
         assert self.state is not None
         location = self.current_location()
+        area = self.current_area()
         all_locations = self.all_locations()
         lines = [f"Current: {location.name}"]
+        if area is not None:
+            lines.append(f"Inside: {area.name}")
         lines.extend(f"Road: {all_locations[loc_id].name}" for loc_id in location.linked_locations if loc_id in all_locations)
+        if area is not None and area.linked_areas:
+            lines.extend(
+                f"Area route: {self.all_areas()[area_id].name}"
+                for area_id in area.linked_areas
+                if area_id in self.all_areas()
+            )
         discovered = [
             all_locations[loc_id].name
             for loc_id in self.state.discovered_locations[-12:]
@@ -335,6 +402,7 @@ class GameApp:
     def _listen(self) -> None:
         assert self.state is not None
         location = self.current_location()
+        area = self.current_area()
         rumors = self.rumors()
         local = [rumor for rumor in rumors if rumor.location_id == location.id and not rumor.discovered]
         if local:
@@ -351,6 +419,12 @@ class GameApp:
             )
             save_state(self.config.autosave_file, self.state)
             return
+        if area is not None:
+            self.renderer.narrate(
+                f"Inside {area.name}, the smaller sounds matter more: a pause before speech, cloth against stone, "
+                "and the distinct caution of people who know this corner has its own memory."
+            )
+            return
         line = choice(
             [
                 "The place speaks in quieter terms: sandal scrape, bargaining restraint, and the unease of people who know walls carry words.",
@@ -365,18 +439,21 @@ class GameApp:
             self.renderer.error("Inspect what?")
             return
         location = self.current_location()
+        area = self.current_area()
         lowered = target.lower()
-        for landmark in location.landmarks:
+        landmark_source = area.landmarks if area is not None else location.landmarks
+        for landmark in landmark_source:
             if lowered in landmark.lower():
-                detail = self.ai.narrate_action(location, f"inspect {landmark}")
-                self.state.facts.append(f"{location.name}: {landmark}")
-                self.state.journal.append(f"Inspected {landmark} in {location.name}.")
+                scope_name = area.name if area is not None else location.name
+                detail = self.ai.narrate_action(location, f"inspect {landmark} in {scope_name}")
+                self.state.facts.append(f"{scope_name}: {landmark}")
+                self.state.journal.append(f"Inspected {landmark} in {scope_name}.")
                 self.state.last_narration = detail
                 self._advance_time()
                 self.renderer.narrate(detail)
                 save_state(self.config.autosave_file, self.state)
                 return
-        shops = self.present_shops(location)
+        shops = self.present_shops(location, area.id if area is not None else "")
         for shop in shops:
             if lowered in shop.name.lower() or lowered in shop.owner.lower():
                 text = (
@@ -386,7 +463,7 @@ class GameApp:
                 self.state.journal.append(f"Inspected {shop.name}.")
                 self.renderer.narrate(text)
                 return
-        npc = self.lore.find_npc(target, self.npc_states(), location.id)
+        npc = self.lore.find_npc(target, self.npc_states(), location.id, area.id if area is not None else "")
         if npc is not None:
             line = (
                 f"{npc.name} bears the marks of {npc.summary.lower()} The person's manner suggests "
@@ -396,6 +473,13 @@ class GameApp:
             self.state.known_people = list(dict.fromkeys(self.state.known_people + [npc.name]))
             self.renderer.narrate(line)
             return
+        if area is None:
+            target_area = self.lore.find_area(target, self.all_areas(), location.id)
+            if target_area is not None:
+                self.renderer.narrate(
+                    f"{target_area.name} lies within {location.name}. You could go there directly if you want a closer look."
+                )
+                return
         self.renderer.error("Nothing by that name stands clearly before you.")
 
     def _move(self, target: str) -> None:
@@ -410,6 +494,76 @@ class GameApp:
             self.renderer.error("No such nearby route is open from here.")
             return
         self._arrive(target_location, traveled=True)
+
+    def _go_area(self, target: str) -> None:
+        assert self.state is not None
+        if not target:
+            self.renderer.error("Go where inside this place?")
+            return
+        location = self.current_location()
+        current_area = self.current_area()
+        if current_area is None:
+            allowed = {area.id for area in self.areas_for_location(location.id)}
+        else:
+            allowed = set(current_area.linked_areas)
+        area = self.lore.find_area(target, self.all_areas(), location.id, allowed)
+        if area is None:
+            self.renderer.error("No such internal route is open from here.")
+            return
+        self.state.area_id = area.id
+        self.state.discovered_areas = list(dict.fromkeys(self.state.discovered_areas + [area.id]))
+        self.state.journal.append(f"Entered {area.name} in {location.name}.")
+        self._ensure_area_population(location, area)
+        self._advance_time()
+        self.state.last_narration = self.ai.describe_area(
+            location,
+            area,
+            self.present_npcs(location.id, area.id),
+            self.present_shops(location, area.id),
+            [rumor for rumor in self.rumors() if rumor.location_id == location.id and rumor.discovered],
+            [mission for mission in self.missions() if mission.status == "active"],
+        )
+        self._render_scene()
+
+    def _enter_shop(self, target: str) -> None:
+        assert self.state is not None
+        if not target:
+            self.renderer.error("Enter which shop?")
+            return
+        location = self.current_location()
+        lowered = target.lower()
+        shop = next(
+            (
+                candidate for candidate in self.all_shops().values()
+                if candidate.location_id == location.id
+                and (lowered in candidate.name.lower() or lowered in candidate.owner.lower())
+            ),
+            None,
+        )
+        if shop is None or not shop.interior_area_id:
+            self.renderer.error("No enterable shop by that name is here.")
+            return
+        area = self.all_areas().get(shop.interior_area_id)
+        if area is None:
+            self.renderer.error("That interior is not yet fully mapped.")
+            return
+        self.state.area_id = area.id
+        self.state.discovered_areas = list(dict.fromkeys(self.state.discovered_areas + [area.id]))
+        self.state.journal.append(f"Entered {shop.name}.")
+        self.state.last_narration = ""
+        self._render_scene(opening=True)
+
+    def _leave_area(self) -> None:
+        assert self.state is not None
+        area = self.current_area()
+        if area is None:
+            self.renderer.system("You are already in the broader location.")
+            return
+        self.state.area_id = ""
+        self.state.journal.append(f"Left {area.name} for the broader scene of {self.current_location().name}.")
+        self.state.last_narration = ""
+        self._advance_time()
+        self._render_scene(opening=True)
 
     def _travel(self, target: str) -> None:
         assert self.state is not None
@@ -429,6 +583,7 @@ class GameApp:
     def _arrive(self, location: LocationProfile, *, traveled: bool, long_route: bool = False) -> None:
         assert self.state is not None
         self.state.location_id = location.id
+        self.state.area_id = ""
         self.state.discovered_locations = list(dict.fromkeys(self.state.discovered_locations + [location.id]))
         self.state.visited_locations.append(location.id)
         self.state.journal.append(
@@ -454,7 +609,13 @@ class GameApp:
             self.renderer.error("Talk to whom?")
             return
         npc_states = self.npc_states()
-        npc = self.lore.find_npc(target, npc_states, self.current_location().id)
+        current_area = self.current_area()
+        npc = self.lore.find_npc(
+            target,
+            npc_states,
+            self.current_location().id,
+            current_area.id if current_area is not None else "",
+        )
         if npc is None:
             self.renderer.error("No one by that name is presently before you.")
             return
@@ -483,7 +644,13 @@ class GameApp:
             self.renderer.error("Use 'ask <name> about <topic>'.")
             return
         npc_states = self.npc_states()
-        npc = self.lore.find_npc(target, npc_states, self.current_location().id)
+        current_area = self.current_area()
+        npc = self.lore.find_npc(
+            target,
+            npc_states,
+            self.current_location().id,
+            current_area.id if current_area is not None else "",
+        )
         if npc is None:
             self.renderer.error("That person is not here.")
             return
@@ -642,13 +809,18 @@ class GameApp:
                 continue
             if npc.shop_id:
                 npc.current_location = npc.home_location
+                npc.current_area = npc.home_area
             elif npc.generated and location.id in self.all_locations():
                 npc.current_location = choice([npc.current_location, npc.home_location])
+                npc.current_area = npc.home_area
         self._commit_npc_states(npc_states)
 
     def _ensure_local_population(self, location: LocationProfile) -> None:
         npc_states = self.npc_states()
-        present = [npc for npc in npc_states.values() if npc.current_location == location.id]
+        present = [
+            npc for npc in npc_states.values()
+            if npc.current_location == location.id and not npc.current_area
+        ]
         target_count = 2 if location.kind in {"city", "palace", "industrial", "settlement"} else 1
         existing_names = list(npc_states.keys())
         created = False
@@ -663,6 +835,40 @@ class GameApp:
                 traits=raw["traits"],
                 home_location=location.id,
                 current_location=location.id,
+                home_area="",
+                current_area="",
+                generated=True,
+                troubles=raw["troubles"],
+                secrets=raw["secrets"],
+            )
+            npc_states[npc.name] = npc
+            present.append(npc)
+            existing_names.append(npc.name)
+            created = True
+        if created:
+            self._commit_npc_states(npc_states)
+
+    def _ensure_area_population(self, location: LocationProfile, area: AreaProfile) -> None:
+        npc_states = self.npc_states()
+        present = [
+            npc for npc in npc_states.values()
+            if npc.current_location == location.id and npc.current_area == area.id
+        ]
+        existing_names = list(npc_states.keys())
+        created = False
+        while len(present) < 1:
+            raw = self.ai.generate_area_npc(location, area, existing_names)
+            npc = NpcState(
+                name=raw["name"],
+                title=raw["title"],
+                faction=raw["faction"],
+                summary=raw["summary"],
+                speech_style=["guarded", "plain", "socially aware"],
+                traits=raw["traits"],
+                home_location=location.id,
+                current_location=location.id,
+                home_area=area.id,
+                current_area=area.id,
                 generated=True,
                 troubles=raw["troubles"],
                 secrets=raw["secrets"],
@@ -681,11 +887,13 @@ class GameApp:
     def _build_suggestions(self) -> list[str]:
         assert self.state is not None
         location = self.current_location()
+        area = self.current_area()
         suggestions: list[str] = []
         all_locations = self.all_locations()
+        all_areas = self.all_areas()
         rumors = self.rumors()
         missions = [mission for mission in self.missions() if mission.status == "active"]
-        present_npcs = self.present_npcs(location.id)
+        present_npcs = self.present_npcs(location.id, area.id if area is not None else "")
 
         local_hidden_rumors = [rumor for rumor in rumors if rumor.location_id == location.id and not rumor.discovered]
         if local_hidden_rumors:
@@ -704,14 +912,38 @@ class GameApp:
         )
         if talkable is not None:
             focus = talkable.troubles[0] if talkable.troubles else "what weighs on this place"
-            suggestions.append(f"A living thread: talk to {talkable.name} about {focus.lower()}.")
+            focus_text = focus.rstrip(".")
+            if focus_text.lower().startswith("needs help"):
+                focus_text = "the quiet trouble there"
+            suggestions.append(f"A living thread: talk to {talkable.name} about {focus_text.lower()}.")
 
-        unexplored_exit = next(
-            (all_locations[loc_id] for loc_id in location.linked_locations if loc_id in all_locations and loc_id not in self.state.discovered_locations),
-            None,
-        )
-        if unexplored_exit is not None:
-            suggestions.append(f"An open route: go {unexplored_exit.name} to widen the map.")
+        if area is None:
+            unexplored_area = next(
+                (
+                    candidate for candidate in self.areas_for_location(location.id)
+                    if candidate.id not in self.state.discovered_areas
+                ),
+                None,
+            )
+            if unexplored_area is not None:
+                suggestions.append(f"An inner route: go {unexplored_area.name} to examine this place more closely.")
+            unexplored_exit = next(
+                (all_locations[loc_id] for loc_id in location.linked_locations if loc_id in all_locations and loc_id not in self.state.discovered_locations),
+                None,
+            )
+            if unexplored_exit is not None:
+                suggestions.append(f"An open route: move {unexplored_exit.name} to widen the map.")
+        else:
+            unexplored_area_link = next(
+                (
+                    all_areas[area_id] for area_id in area.linked_areas
+                    if area_id in all_areas and area_id not in self.state.discovered_areas
+                ),
+                None,
+            )
+            if unexplored_area_link is not None:
+                suggestions.append(f"A close route: go {unexplored_area_link.name} while the local trail is still clear.")
+            suggestions.append("A broader perspective: leave when you want the whole location back in view.")
 
         remote_mission = next((mission for mission in missions if mission.location_id != location.id), None)
         if remote_mission is not None:
@@ -732,6 +964,33 @@ class GameApp:
                 unique.append(line)
                 seen.add(line)
         return unique
+
+    def _scene_exit_names(self, location: LocationProfile, area: AreaProfile | None) -> list[str]:
+        if area is not None:
+            exits = [self.all_areas()[area_id].name for area_id in area.linked_areas if area_id in self.all_areas()]
+            exits.append("leave")
+            return exits
+        area_names = [area_item.name for area_item in self.areas_for_location(location.id)[:3]]
+        location_names = [
+            self.all_locations()[loc_id].name for loc_id in location.linked_locations if loc_id in self.all_locations()
+        ]
+        return area_names + location_names
+
+    def areas_for_location(self, location_id: str) -> list[AreaProfile]:
+        interior_ids = self.shop_interior_area_ids()
+        return [
+            area for area in self.all_areas().values()
+            if area.parent_location_id == location_id and area.id not in interior_ids
+        ]
+
+    def shop_interior_area_ids(self) -> set[str]:
+        return {shop.interior_area_id for shop in self.all_shops().values() if shop.interior_area_id}
+
+    def _prompt_name(self) -> str:
+        area = self.current_area()
+        if area is not None:
+            return area.name
+        return self.current_location().name
 
 
 def _slug(text: str) -> str:

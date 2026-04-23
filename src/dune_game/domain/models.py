@@ -20,6 +20,8 @@ class ShopProfile:
     owner: str
     location_id: str
     flavor: str
+    area_id: str = ""
+    interior_area_id: str = ""
     goods: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -57,6 +59,29 @@ class LocationProfile:
 
 
 @dataclass
+class AreaProfile:
+    id: str
+    name: str
+    parent_location_id: str
+    summary: str
+    atmosphere: list[str]
+    landmarks: list[str] = field(default_factory=list)
+    linked_areas: list[str] = field(default_factory=list)
+    resident_npcs: list[str] = field(default_factory=list)
+    shop_ids: list[str] = field(default_factory=list)
+    rumor_tags: list[str] = field(default_factory=list)
+    travel_keywords: list[str] = field(default_factory=list)
+    generated: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "AreaProfile":
+        return cls(**data)
+
+
+@dataclass
 class NpcState:
     name: str
     title: str
@@ -66,6 +91,8 @@ class NpcState:
     traits: list[str]
     home_location: str
     current_location: str
+    home_area: str = ""
+    current_area: str = ""
     shop_id: str = ""
     canonical: bool = False
     generated: bool = False
@@ -80,6 +107,8 @@ class NpcState:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "NpcState":
+        data.setdefault("home_area", "")
+        data.setdefault("current_area", "")
         data.setdefault("shop_id", "")
         data.setdefault("canonical", False)
         data.setdefault("generated", False)
@@ -151,7 +180,9 @@ class GameState:
     location_id: str
     time_index: int
     inventory: list[str]
+    area_id: str = ""
     discovered_locations: list[str] = field(default_factory=list)
+    discovered_areas: list[str] = field(default_factory=list)
     visited_locations: list[str] = field(default_factory=list)
     known_people: list[str] = field(default_factory=list)
     heard_rumor_ids: list[str] = field(default_factory=list)
@@ -171,7 +202,9 @@ class GameState:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "GameState":
+        data.setdefault("area_id", "")
         data.setdefault("discovered_locations", [])
+        data.setdefault("discovered_areas", [])
         data.setdefault("visited_locations", [])
         data.setdefault("known_people", [])
         data.setdefault("heard_rumor_ids", [])

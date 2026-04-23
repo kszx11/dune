@@ -9,13 +9,14 @@ try:
 except ModuleNotFoundError:
     yaml = None
 
-from dune_game.domain.models import LocationProfile, NpcState, PlayerProfile, Rumor, ShopProfile
+from dune_game.domain.models import AreaProfile, LocationProfile, NpcState, PlayerProfile, Rumor, ShopProfile
 
 
 @dataclass
 class LoreCatalog:
     player: PlayerProfile
     locations: dict[str, LocationProfile]
+    areas: dict[str, AreaProfile]
     npcs: dict[str, NpcState]
     rumors: list[Rumor]
     shops: dict[str, ShopProfile]
@@ -24,11 +25,13 @@ class LoreCatalog:
     def load(cls) -> "LoreCatalog":
         base = Path(__file__).resolve().parents[1] / "content"
         locations_raw = _read_structured(base / "locations.yaml")
+        areas_raw = _read_structured(base / "areas.yaml")
         npcs_raw = _read_structured(base / "npcs.yaml")
         rumors_raw = _read_structured(base / "rumors.yaml")
         shops_raw = _read_structured(base / "shops.yaml")
         player = PlayerProfile(**npcs_raw["player"])
         locations = {item["id"]: LocationProfile(**item) for item in locations_raw["locations"]}
+        areas = {item["id"]: AreaProfile(**item) for item in areas_raw["areas"]}
         npcs = {
             item["name"]: NpcState(
                 name=item["name"],
@@ -39,6 +42,8 @@ class LoreCatalog:
                 traits=item["traits"],
                 home_location=item["home_location"],
                 current_location=item["home_location"],
+                home_area=item.get("home_area", ""),
+                current_area=item.get("home_area", ""),
                 shop_id=item.get("shop_id", ""),
                 canonical=item.get("canonical", False),
                 troubles=item.get("troubles", []),
@@ -49,7 +54,7 @@ class LoreCatalog:
         }
         rumors = [Rumor(**item) for item in rumors_raw["rumors"]]
         shops = {item["id"]: ShopProfile(**item) for item in shops_raw["shops"]}
-        return cls(player=player, locations=locations, npcs=npcs, rumors=rumors, shops=shops)
+        return cls(player=player, locations=locations, areas=areas, npcs=npcs, rumors=rumors, shops=shops)
 
     def find_location(self, query: str, all_locations: dict[str, LocationProfile]) -> LocationProfile | None:
         needle = query.strip().lower()
@@ -69,10 +74,38 @@ class LoreCatalog:
                 return location
         return None
 
-    def find_npc(self, query: str, npc_states: dict[str, NpcState], location_id: str | None = None) -> NpcState | None:
+    def find_area(
+        self,
+        query: str,
+        all_areas: dict[str, AreaProfile],
+        parent_location_id: str,
+        allowed_area_ids: set[str] | None = None,
+    ) -> AreaProfile | None:
+        needle = query.strip().lower()
+        if not needle:
+            return None
+        for area in all_areas.values():
+            if area.parent_location_id != parent_location_id:
+                continue
+            if allowed_area_ids is not None and area.id not in allowed_area_ids:
+                continue
+            haystacks = [area.id, area.name, *area.travel_keywords, *area.landmarks]
+            if any(needle in value.lower() for value in haystacks):
+                return area
+        return None
+
+    def find_npc(
+        self,
+        query: str,
+        npc_states: dict[str, NpcState],
+        location_id: str | None = None,
+        area_id: str | None = None,
+    ) -> NpcState | None:
         needle = query.strip().lower()
         for npc in npc_states.values():
             if location_id and npc.current_location != location_id:
+                continue
+            if area_id is not None and npc.current_area != area_id:
                 continue
             if needle == npc.name.lower() or needle in npc.name.lower():
                 return npc

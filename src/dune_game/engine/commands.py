@@ -17,6 +17,10 @@ def parse_command(raw: str) -> ParsedCommand:
         return ParsedCommand(kind="help", raw=raw)
     if lowered in {"hint", "suggest", "suggestions"}:
         return ParsedCommand(kind="hint", raw=raw)
+    if lowered in {"areas", "area"}:
+        return ParsedCommand(kind="areas", raw=raw)
+    if lowered == "leave":
+        return ParsedCommand(kind="leave", raw=raw)
     if lowered == "look":
         return ParsedCommand(kind="look", raw=raw)
     if lowered in {"listen", "listen closely"}:
@@ -36,11 +40,16 @@ def parse_command(raw: str) -> ParsedCommand:
     if lowered == "load":
         return ParsedCommand(kind="load", raw=raw)
 
-    for prefix in ("move to ", "move ", "go to ", "go "):
+    for prefix in ("move to ", "move "):
         if lowered.startswith(prefix):
             return ParsedCommand(kind="move", raw=raw, target=text[len(prefix) :].strip())
+    for prefix in ("go to ", "go "):
+        if lowered.startswith(prefix):
+            return ParsedCommand(kind="go_area", raw=raw, target=text[len(prefix) :].strip())
     if lowered.startswith("travel "):
         return ParsedCommand(kind="travel", raw=raw, target=text[7:].strip())
+    if lowered.startswith("enter "):
+        return ParsedCommand(kind="enter", raw=raw, target=text[6:].strip())
     for prefix in ("inspect ", "examine ", "look at "):
         if lowered.startswith(prefix):
             return ParsedCommand(kind="inspect", raw=raw, target=text[len(prefix) :].strip())

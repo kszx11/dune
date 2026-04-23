@@ -48,11 +48,15 @@ python -m dune_game
 
 - `look`
 - `hint`
+- `areas`
 - `inspect <thing>`
 - `listen`
 - `people`
 - `talk <name>`
 - `ask <name> about <topic>`
+- `go <area>`
+- `enter <shop>`
+- `leave`
 - `move <place>`
 - `travel <place>`
 - `where`

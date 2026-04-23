@@ -4,7 +4,7 @@ import json
 from random import choice
 
 from dune_game.ai.client import OpenAIClient
-from dune_game.domain.models import LocationProfile, Mission, NpcState, Rumor, ShopProfile
+from dune_game.domain.models import AreaProfile, LocationProfile, Mission, NpcState, Rumor, ShopProfile
 
 
 class WorldAI:
@@ -42,6 +42,35 @@ class WorldAI:
         if text:
             return text
         return self._fallback_location(location, npcs, shops, rumors, missions)
+
+    def describe_area(
+        self,
+        location: LocationProfile,
+        area: AreaProfile,
+        npcs: list[NpcState],
+        shops: list[ShopProfile],
+        rumors: list[Rumor],
+        missions: list[Mission],
+    ) -> str:
+        instructions = (
+            "Write like a restrained Dune scene description for a smaller explorable area within a larger place. "
+            "Keep the scale intimate and spatially specific. Use 3-5 sentences."
+        )
+        prompt = (
+            f"Parent location: {location.name}\n"
+            f"Area: {area.name}\n"
+            f"Area summary: {area.summary}\n"
+            f"Atmosphere: {', '.join(area.atmosphere)}\n"
+            f"Landmarks: {', '.join(area.landmarks)}\n"
+            f"Nearby people: {', '.join(f'{npc.name} ({npc.title})' for npc in npcs) or 'none'}\n"
+            f"Nearby shops: {', '.join(shop.name for shop in shops) or 'none'}\n"
+            f"Heard rumors: {', '.join(r.text for r in rumors[:2]) or 'none'}\n"
+            f"Active pressures: {', '.join(m.title for m in missions[:2]) or 'none'}"
+        )
+        text = self.client.text(instructions=instructions, prompt=prompt, temperature=0.95)
+        if text:
+            return text
+        return self._fallback_area(location, area, npcs, shops, rumors, missions)
 
     def npc_reply(self, npc: NpcState, location: LocationProfile, player_line: str) -> str:
         instructions = (
@@ -200,6 +229,13 @@ class WorldAI:
             "secrets": [f"Knows a private detail about movement through {location.region}."],
         }
 
+    def generate_area_npc(self, location: LocationProfile, area: AreaProfile, existing_names: list[str]) -> dict:
+        raw = self.generate_local_npc(location, existing_names)
+        raw["summary"] = f"A person shaped by the demands of {area.name.lower()}, used to reading a room before speaking in it."
+        raw["troubles"] = [f"Needs help with a quiet trouble tied to {area.name}."]
+        raw["secrets"] = [f"Knows something withheld inside {area.name}."]
+        return raw
+
     @staticmethod
     def _fallback_location(
         location: LocationProfile,
@@ -216,6 +252,26 @@ class WorldAI:
         return (
             f"{location.summary} The air of the place feels {mood}, and every arrangement of shade, stone, and movement "
             "suggests that survival here is political as much as physical."
+            f"{people}{shops_line}{rumor_line}{mission_line}"
+        )
+
+    @staticmethod
+    def _fallback_area(
+        location: LocationProfile,
+        area: AreaProfile,
+        npcs: list[NpcState],
+        shops: list[ShopProfile],
+        rumors: list[Rumor],
+        missions: list[Mission],
+    ) -> str:
+        mood = ", ".join(area.atmosphere[:3])
+        people = f" Nearby stand {', '.join(npc.name for npc in npcs[:3])}." if npcs else ""
+        shops_line = f" Trade or service here centers on {', '.join(shop.name for shop in shops[:2])}." if shops else ""
+        rumor_line = f" The local air carries pressure from {rumors[0].text}" if rumors else ""
+        mission_line = f" The place now feels tied to {missions[0].title}." if missions else ""
+        return (
+            f"{area.summary} Inside {location.name}, this smaller space feels {mood}. "
+            "Details matter more here: who watches, who waits, and which object is placed to be seen."
             f"{people}{shops_line}{rumor_line}{mission_line}"
         )
 

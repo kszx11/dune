@@ -5,6 +5,8 @@
       "name": "Harah's Water Counter",
       "owner": "Harah",
       "location_id": "market_quarter",
+      "area_id": "market_water_ring_stall",
+      "interior_area_id": "market_water_counter_interior",
       "flavor": "Water is measured here with the severity of law and the intimacy of mercy.",
       "goods": ["water rings", "ration tabs", "sealed cups"]
     },
@@ -13,6 +15,8 @@
       "name": "Sandfit Stillsuit Rooms",
       "owner": "Tazir",
       "location_id": "market_quarter",
+      "area_id": "market_spice_cloth_arcade",
+      "interior_area_id": "sandfit_rooms",
       "flavor": "The proprietor speaks little and judges everyone first by their waste of motion.",
       "goods": ["stillsuit patches", "desert wraps", "filter cloth"]
     },
@@ -21,6 +25,8 @@
       "name": "Berthside Outfitters",
       "owner": "Ommad",
       "location_id": "caravan_square",
+      "area_id": "caravan_crawler_berth",
+      "interior_area_id": "berthside_outfitters_interior",
       "flavor": "Tools for travel sit beside ledgers that reveal who is preparing for routes they do not admit to taking.",
       "goods": ["desert hooks", "route flags", "sealed packs"]
     },
@@ -29,6 +35,8 @@
       "name": "Shadow Broker Stall",
       "owner": "Ilban",
       "location_id": "smugglers_alley",
+      "area_id": "smugglers_blind_door",
+      "interior_area_id": "shadow_broker_interior",
       "flavor": "Nothing is displayed honestly, least of all intentions.",
       "goods": ["coded tokens", "false manifests", "quiet introductions"]
     }
