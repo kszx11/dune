@@ -116,30 +116,22 @@ class Renderer:
     def show_status(
         self,
         state: GameState,
-        location: LocationProfile,
-        area: AreaProfile | None,
-        people_count: int,
         trust_hint: str,
         suggestions: list[str],
     ) -> None:
         if not RICH_AVAILABLE:
             print(
                 f"Paul: {state.player_name}, {state.player_title} | Pressure: {trust_hint} | "
-                f"Known places: {len(state.discovered_locations)} | Nearby: {people_count}"
+                f"Known places: {len(state.discovered_locations)} | Known people: {len(state.known_people)}"
             )
-            if area is not None:
-                print(f"Area: {area.name}")
             if suggestions:
                 print(f"Suggestions: {' | '.join(suggestions[:2])}")
             return
         table = Table(show_header=False, box=None, pad_edge=False)
         table.add_row("Paul", f"{state.player_name}, {state.player_title}")
-        if area is not None:
-            table.add_row("Area", area.name)
         table.add_row("Present Pressure", trust_hint)
         table.add_row("Known Places", str(len(state.discovered_locations)))
         table.add_row("Known People", str(len(state.known_people)))
-        table.add_row("Nearby", f"{people_count} within the scene")
         if suggestions:
             table.add_row("Suggestions", suggestions[0])
             for extra in suggestions[1:2]:

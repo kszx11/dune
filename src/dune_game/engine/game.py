@@ -262,7 +262,7 @@ class GameApp:
         else:
             description = self.state.last_narration
         self.renderer.location_card(self.state, location, area, npcs, exit_names, rumors, missions)
-        self.renderer.show_status(self.state, location, area, len(npcs), self._trust_hint(), self.state.suggestions)
+        self.renderer.show_status(self.state, self._trust_hint(), self.state.suggestions)
         self.renderer.narrate(description)
         save_state(self.config.autosave_file, self.state)
 
