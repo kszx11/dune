@@ -40,3 +40,16 @@ def test_renderer_strips_duplicate_npc_prefix(tmp_path) -> None:
         renderer._clean_npc_text("Harah", 'Harah measures each word as if it could cost water. "Keep your voice down."')
         == 'measures each word as if it could cost water. "Keep your voice down."'
     )
+
+
+def test_go_command_accepts_nearby_location_names(monkeypatch, tmp_path) -> None:
+    config = Config(api_key=None, text_model="gpt-4.1-mini", typewriter_delay=0.0, reduced_motion=True, root_dir=tmp_path)
+    app = GameApp(config)
+    app.state = app._new_game()
+
+    monkeypatch.setattr(app, "_render_scene", lambda *args, **kwargs: None)
+
+    app._go_area("market quarter")
+
+    assert app.state.location_id == "market_quarter"
+    assert app.state.area_id == ""

@@ -520,7 +520,17 @@ class GameApp:
             allowed = set(current_area.linked_areas)
         area = self.lore.find_area(target, self.all_areas(), location.id, allowed)
         if area is None:
-            self.renderer.error("No such internal route is open from here.")
+            if current_area is None:
+                nearby_locations = {
+                    loc_id: self.all_locations()[loc_id]
+                    for loc_id in location.linked_locations
+                    if loc_id in self.all_locations()
+                }
+                nearby_location = self.lore.find_location(target, nearby_locations)
+                if nearby_location is not None:
+                    self._arrive(nearby_location, traveled=True)
+                    return
+            self.renderer.error("No such nearby route is open from here.")
             return
         self.state.area_id = area.id
         self.state.discovered_areas = list(dict.fromkeys(self.state.discovered_areas + [area.id]))
